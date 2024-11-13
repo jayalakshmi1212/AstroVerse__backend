@@ -11,7 +11,15 @@ from django.utils import timezone
 from datetime import timedelta
 import random
 from rest_framework.permissions import IsAuthenticated
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.urls import reverse
+from django.utils.http import urlsafe_base64_decode
 
+
+
+####################################################### signup ###########################################################
 
 class SignupView(APIView):
     def post(self, request):
@@ -37,6 +45,8 @@ class SignupView(APIView):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+############otp
 
 class VerifyOTPView(APIView):
     def post(self, request):
@@ -82,6 +92,7 @@ class VerifyOTPView(APIView):
         except User.DoesNotExist:
             return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
+##############################################Login################################################
 
 class LoginView(APIView):
     def post(self, request):
@@ -104,6 +115,8 @@ class LoginView(APIView):
             })
 
         return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+    
+###########Logout   
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -115,3 +128,71 @@ class LogoutView(APIView):
             return Response({"message": "Logged out successfully"}, status=status.HTTP_205_RESET_CONTENT)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+#####################forgot password
+class ForgotPasswordView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        try:
+            user = User.objects.get(email=email)
+            token_generator = PasswordResetTokenGenerator()
+            token = token_generator.make_token(user)
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+            # Construct the password reset URL
+            reset_url =f"http://localhost:5173/reset-password/{uid}/{token}/"
+
+            # Send the email with the reset URL
+            send_mail(
+                'Password Reset Request',
+                f'Click the link below to reset your password:\n{reset_url}',
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=False,
+            )
+
+            return Response({"message": "Password reset link sent to your email."}, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({"error": "User with this email does not exist."}, status=status.HTTP_404_NOT_FOUND)
+        
+from rest_framework.permissions import AllowAny
+
+class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]  # Allow unauthenticated users
+
+    def get(self, request, uidb64, token):
+        try:
+            user_id = urlsafe_base64_decode(uidb64).decode()
+            user = User.objects.get(pk=user_id)
+            token_generator = PasswordResetTokenGenerator()
+
+            # Verify if the token is valid
+            if token_generator.check_token(user, token):
+                return Response({"message": "Token is valid."}, status=status.HTTP_200_OK)
+            else:
+                return Response({"error": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
+
+        except (User.DoesNotExist, ValueError, TypeError, OverflowError):
+            return Response({"error": "Invalid user."}, status=status.HTTP_404_NOT_FOUND)
+
+    def post(self, request, uidb64, token):
+        try:
+            user_id = urlsafe_base64_decode(uidb64).decode()
+            user = User.objects.get(pk=user_id)
+            token_generator = PasswordResetTokenGenerator()
+
+            # Verify if the token is valid
+            if not token_generator.check_token(user, token):
+                return Response({"error": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Set the new password
+            new_password = request.data.get('new_password')
+            user.set_password(new_password)
+            user.save()
+
+            return Response({"message": "Password reset successful."}, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({"error": "Invalid user."}, status=status.HTTP_404_NOT_FOUND)
