@@ -6,7 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import send_mail
 from django.conf import settings
 from .models import User
-from .serializers import UserSerializer, UserSignupSerializer
+from .serializers import UserSerializer, UserSignupSerializer,TutorSignupSerializer,TutorSerializer
 from django.utils import timezone
 from datetime import timedelta
 import random
@@ -20,6 +20,7 @@ from django.utils.http import urlsafe_base64_decode
 
 
 ####################################################### signup ###########################################################
+
 
 class SignupView(APIView):
     def post(self, request):
@@ -41,11 +42,14 @@ class SignupView(APIView):
                 fail_silently=False,
             )
 
-            return Response({"message": "OTP sent to your email. Please verify to complete signup."}, status=status.HTTP_201_CREATED)
+            # Redirect the user to the OTP verification page
+            otp_verification_url = reverse('tutor-verify-otp')  # You can change this to whatever URL you want
+            return Response({
+                "message": "OTP sent to your email. Please verify to complete signup.",
+                "redirect_to": otp_verification_url  # Return the URL for redirection
+            }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
 ############otp
 
 class VerifyOTPView(APIView):
@@ -72,6 +76,7 @@ class VerifyOTPView(APIView):
             print("Provided OTP:", type(otp)) 
             print("OTPs Match:", user.otp == otp)
             print("OTPs Match:", user.otp == int(otp))
+           
             # Check if OTP matches
             if user.otp == otp:
                 user.is_active = True  # Mark user as active
@@ -196,3 +201,112 @@ class ResetPasswordView(APIView):
 
         except User.DoesNotExist:
             return Response({"error": "Invalid user."}, status=status.HTTP_404_NOT_FOUND)
+
+
+#################################################################################################################
+class TutorSignupView(APIView):
+    def post(self, request):
+        serializer = TutorSignupSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            
+            # Generate OTP
+            otp = random.randint(100000, 999999)
+            user.otp = otp
+            user.is_active = False  # Make tutor inactive until OTP verification
+            user.otp_generated_at = timezone.now()  # Store the OTP generation time
+            user.save()
+
+            # Send OTP to the tutor's email
+            send_mail(
+                'Your OTP Code',
+                f'Your OTP for verification is {otp}',
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=False,
+            )
+            print(otp)
+            # Redirect the tutor to the OTP verification page
+            otp_verification_url = reverse('tutor-verify-otp')  # Replace with your actual verification URL name
+            return Response({
+                "message": "OTP sent to your email. Please verify to complete signup.",
+                "redirect_to": otp_verification_url  # Frontend can use this to navigate
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TutorVerifyOTPView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        otp = request.data.get('otp')
+
+        try:
+            user = User.objects.get(email=email)
+
+            # Check if OTP exists
+            if user.otp is None:
+                return Response({"detail": "OTP not sent or expired. Please request a new OTP."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Check if OTP is expired (5 minutes expiration)
+            otp_expiry_time = user.otp_generated_at + timedelta(minutes=5)
+            if timezone.now() > otp_expiry_time:
+                user.otp = None  # Clear expired OTP
+                user.save()
+                return Response({"detail": "OTP has expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Verify the OTP
+            if user.otp == otp:  # Convert OTP to integer for comparison
+                user.is_active = True  # Activate the tutor account
+                user.otp = None  # Clear OTP
+                user.save()
+
+                # Generate JWT tokens for the tutor
+                refresh = RefreshToken.for_user(user)
+                access = refresh.access_token
+                return Response({
+                    'refresh': str(refresh),
+                    'access': str(access),
+                    'user': TutorSerializer(user).data,  # Serialize the tutor details
+                    "message": "OTP verified successfully. Welcome!"
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({"detail": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+
+        except User.DoesNotExist:
+            return Response({"detail": "Tutor not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+
+from django.views import View
+from django.http import JsonResponse
+from django.contrib.auth import authenticate
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+import json
+
+@method_decorator(csrf_exempt, name='dispatch')  # Exempt CSRF for the class-based view
+class AdminLoginView(View):
+    def post(self, request, *args, **kwargs):
+        try:
+            data = json.loads(request.body)
+            email = data.get('email')
+            password = data.get('password')
+
+            if not email or not password:
+                return JsonResponse({'error': 'Email and password are required'}, status=400)
+
+            user = authenticate(request, email=email, password=password)
+            if user is not None:
+                if not user.is_active:
+                    return JsonResponse({'error': 'Account not activated. Verify OTP first.'}, status=401)
+                if not user.is_superuser:
+                    return JsonResponse({'error': 'Only superusers are allowed to log in'}, status=403)
+                return JsonResponse({'message': 'Login successful', 'user': {'id': user.id, 'email': user.email, 'role': user.role}})
+            else:
+                return JsonResponse({'error': 'Invalid credentials'}, status=401)
+
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON format'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
