@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import send_mail
 from django.conf import settings
-from .models import User
+from .models import User,Profile
 from .serializers import UserSerializer, UserSignupSerializer,TutorSignupSerializer,TutorSerializer
 from django.utils import timezone
 from datetime import timedelta
@@ -32,7 +32,7 @@ class SignupView(APIView):
             user.is_active = False
             user.otp_generated_at = timezone.now()  # Store the time OTP was created
             user.save()
-
+            Profile.objects.create(user=user)
             # Send OTP to the user's email
             send_mail(
                 'Your OTP Code',
@@ -207,6 +207,7 @@ class ResetPasswordView(APIView):
 class TutorSignupView(APIView):
     def post(self, request):
         serializer = TutorSignupSerializer(data=request.data)
+        print(request.data,'from backend')
         if serializer.is_valid():
             user = serializer.save()
             
@@ -243,7 +244,6 @@ class TutorVerifyOTPView(APIView):
 
         try:
             user = User.objects.get(email=email)
-
             # Check if OTP exists
             if user.otp is None:
                 return Response({"detail": "OTP not sent or expired. Please request a new OTP."}, status=status.HTTP_400_BAD_REQUEST)
@@ -260,6 +260,7 @@ class TutorVerifyOTPView(APIView):
                 user.is_active = True  # Activate the tutor account
                 user.otp = None  # Clear OTP
                 user.save()
+                
 
                 # Generate JWT tokens for the tutor
                 refresh = RefreshToken.for_user(user)
@@ -310,3 +311,12 @@ class AdminLoginView(View):
             return JsonResponse({'error': 'Invalid JSON format'}, status=400)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
+
+#################### user profile
+from rest_framework.generics import RetrieveUpdateAPIView
+class UserProfileView(RetrieveUpdateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserSerializer
+
+    def get_object(self):
+        return self.request.user

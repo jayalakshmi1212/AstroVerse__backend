@@ -38,9 +38,12 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'rest_framework.authtoken',
     'rest_framework_simplejwt',
     'authapp',
     'corsheaders',
+    'store',
+    
 ]
 
 MIDDLEWARE = [
@@ -135,8 +138,18 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,  # Number of items per page
 }
 from datetime import timedelta
+
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,  # Optionally rotate refresh tokens
+    'BLACKLIST_AFTER_ROTATION': True,  # Blacklist old tokens after rotation
+}
 
 
 CORS_ALLOWED_ORIGINS = [
@@ -155,3 +168,14 @@ EMAIL_HOST_USER = 'jayalakshmim720@gmail.com'
 EMAIL_HOST_PASSWORD = 'ptdi aeck wxnq gvzk'         
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
+
+RAZORPAY_KEY_ID ='rzp_test_fGwLaAdAhjOjbm'
+RAZORPAY_KEY_SECRET = '7qO0FhI7y3SZGPpikcUEvVf1'
+
+
+CLOUDINARY = {
+    'cloud_name': 'dwv9coxek',
+    'api_key': '955541511849682',
+    'api_secret': 'TLqyg1haRggPXpsMOO8A2v-j570',
+}
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
