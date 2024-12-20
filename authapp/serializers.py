@@ -1,26 +1,41 @@
 from rest_framework import serializers
-from .models import User,Profile
+from .models import User,Profile,TutorProfile
 
 
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = ['phone_number', 'profile_image', 'qualification']
+        
+
+class TutorProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TutorProfile
+        fields = ["qualification", "bio", "experience", "profile_image"]
+
 
 class UserSerializer(serializers.ModelSerializer):
-    profile = ProfileSerializer()
+    profile = ProfileSerializer(required=False)
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'role', 'profile')
+        fields = ['id', 'username', 'email', 'role', 'profile']
 
     def update(self, instance, validated_data):
+        # Pop the nested profile data
         profile_data = validated_data.pop('profile', None)
+
+        # Update the User model
         instance = super().update(instance, validated_data)
 
         if profile_data:
+            # Ensure profile data is updated or created
             Profile.objects.update_or_create(user=instance, defaults=profile_data)
+
         return instance
+
+
+
 
 class UserSignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)

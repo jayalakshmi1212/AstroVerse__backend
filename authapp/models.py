@@ -23,6 +23,11 @@ class User(AbstractBaseUser, PermissionsMixin):
         ('admin', 'Admin'),
         ('tutor', 'Tutor'),
     )
+    APPROVAL_CHOICES = (
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    )
     username = models.CharField(max_length=255, unique=True)
     email = models.EmailField(unique=True)
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='user')
@@ -31,7 +36,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     otp = models.CharField(max_length=6, blank=True, null=True)  # Store OTP directly in the user model
     otp_generated_at = models.DateTimeField(null=True, blank=True)  # Timestamp for OTP generation
     document_tutor=models.CharField(max_length=255,blank=True,null=True)
-    is_verified = models.BooleanField(default=False)
+    approval_status = models.CharField(max_length=10, choices=APPROVAL_CHOICES, default='pending')
 
     objects = UserManager()
 
@@ -56,3 +61,13 @@ class Profile(models.Model):
 
     def __str__(self):
         return f"{self.user.username}'s Profile"
+    
+class TutorProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="tutor_profile")
+    qualification = models.CharField(max_length=255, blank=True, null=True)
+    bio = models.TextField(blank=True, null=True)
+    experience = models.CharField(max_length=255, blank=True, null=True)
+    profile_image =models.URLField(max_length=500, blank=True, null=True)  # Cloudinary image URL
+
+    def __str__(self):
+        return f"Tutor Profile - {self.user.username}"

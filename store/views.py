@@ -69,14 +69,11 @@ def toggle_user_status(request, user_id):
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
     
     
-class AdminCourseListView(APIView):
-     # Ensure only admins can access this view
-    permission_classes = [IsAuthenticated]
-    def get(self, request):
-        courses = Course.objects.all()  # Fetch all courses
-        serializer = CourseDetailSerializer(courses, many=True)  # Serialize with detailed info
-        return Response(serializer.data)
-
+@api_view(['GET'])
+def get_courses(request):
+    courses = Course.objects.all()
+    serializer = CourseCreateSerializer(courses, many=True)
+    return Response({'courses': serializer.data})
 
 ############################# tutor list ################################
 
@@ -89,22 +86,27 @@ def list_tutors(request):
             'username': tutor.username,
             'email': tutor.email,
             'role': tutor.role,
-            'is_active': tutor.is_active  # Include is_active
+            'is_active': tutor.is_active,  # Include is_active
+             'document_tutor': tutor.document_tutor,  # Include document URL
+            'approval_status': tutor.approval_status  # Include approval status
         }
         for tutor in tutors
     ]
     return Response({'tutors': tutor_data}, status=status.HTTP_200_OK)
-
 @api_view(['POST'])
-def toggle_tutor_status(request, user_id):
+def update_tutor_approval_status(request, user_id):
     try:
-        user = User.objects.get(pk=user_id, role='tutor')  # Ensure only tutors can be toggled
-        user.is_active = not user.is_active
+        user = User.objects.get(pk=user_id, role='tutor')  # Ensure only tutors can be updated
+        new_status = request.data.get('approval_status')
+        if new_status not in ['approved', 'rejected']:
+            return Response({'error': 'Invalid approval status'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.approval_status = new_status
+        user.is_active = (new_status == 'approved')  # Activate only if approved
         user.save()
-        return Response({'message': 'Tutor status updated', 'is_active': user.is_active}, status=status.HTTP_200_OK)
+        return Response({'message': 'Tutor approval status updated', 'approval_status': user.approval_status}, status=status.HTTP_200_OK)
     except User.DoesNotExist:
         return Response({'error': 'Tutor not found'}, status=status.HTTP_404_NOT_FOUND)
-    
 
 # views.py
 from rest_framework.views import APIView
@@ -272,27 +274,9 @@ class EnrollmentStatusView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
    
-class LessonListView(APIView):
+class CourseLessonsView(APIView):
     def get(self, request, course_id):
-        user = request.user  # Assumes the user is authenticated
-        
-        # Check if the user is enrolled in the course
-        if not Enrollment.objects.filter(user=user, course_id=course_id, is_paid=True).exists():
-            return Response({"error": "You are not enrolled in this course"}, status=status.HTTP_403_FORBIDDEN)
-        
-        # Get the course and its lessons
-        try:
-            course = Course.objects.get(id=course_id)
-            lessons = course.lessons.all()  # Related name from the Course model
-            lessons_data = [
-                {
-                    "id": lesson.id,
-                    "title": lesson.title,
-                    "video_url": lesson.video_url,
-                    "description": lesson.description,
-                }
-                for lesson in lessons
-            ]
-            return Response({"course_title": course.title, "lessons": lessons_data}, status=status.HTTP_200_OK)
-        except Course.DoesNotExist:
-            return Response({"error": "Course not found"}, status=status.HTTP_404_NOT_FOUND)
+        course = get_object_or_404(Course, id=course_id)
+        lessons = course.lessons.all()  # Fetch all lessons related to this course
+        lesson_serializer = LessonSerializer(lessons, many=True)
+        return Response(lesson_serializer.data)
