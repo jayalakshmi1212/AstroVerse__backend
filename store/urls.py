@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import toggle_user_status,  CourseLessonsView,EnrollmentStatusView,ConfirmPaymentView,InitiatePaymentAPIView, CategoryListCreateView, CategoryUpdateDeleteView,UserListView,update_tutor_approval_status,list_tutors,CourseDetailView,AddLessonView,AddCourseView,CourseListView,TutorCourseListView,CourseDetailUser
+from .views import toggle_user_status,SubmitReviewView,TutorCourseReviewsView,CourseReviewsView,CommentListCreateView , CourseLessonsView,EnrollmentStatusView,ConfirmPaymentView,InitiatePaymentAPIView, CategoryListCreateView, CategoryUpdateDeleteView,UserListView,update_tutor_approval_status,list_tutors,CourseDetailView,AddLessonView,AddCourseView,CourseListView,TutorCourseListView,CourseDetailUser
 from .views import get_courses
 urlpatterns = [
     path('categories/', CategoryListCreateView.as_view(), name='category-list-create'),
@@ -19,5 +19,9 @@ urlpatterns = [
        path("confirm-payment/", ConfirmPaymentView.as_view(), name="confirm-payment"),
        path('enrollment-status/<int:course_id>/', EnrollmentStatusView.as_view(), name='enrollment-status'),
       path('courses/<int:course_id>/lessons/', CourseLessonsView.as_view(), name='course_lessons'),
+      path('lessons/<int:lesson_id>/comments/', CommentListCreateView.as_view(), name='comment-list-create'),
+       path('courses/<int:course_id>/submit-review/', SubmitReviewView.as_view(), name='submit-review'),
+    path('courses/<int:course_id>/reviews/', CourseReviewsView.as_view(), name='course-reviews'),
+    path('tutor/reviews/', TutorCourseReviewsView.as_view(), name='tutor-reviews'),
 ]
     

@@ -211,6 +211,7 @@ class CourseDetailUser(APIView):
         try:
             course = Course.objects.get(id=course_id)
             serializer = CourseCreateSerializer(course)
+            print(serializer.data)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Course.DoesNotExist:
             return Response({"error": "Course not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -279,4 +280,93 @@ class CourseLessonsView(APIView):
         course = get_object_or_404(Course, id=course_id)
         lessons = course.lessons.all()  # Fetch all lessons related to this course
         lesson_serializer = LessonSerializer(lessons, many=True)
+        print(lesson_serializer.data,'data of lesson')
         return Response(lesson_serializer.data)
+    
+    
+
+from rest_framework import generics
+from .models import Comment
+from .storeSerializer import CommentSerializer
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
+
+class CommentListCreateView(generics.ListCreateAPIView):
+    queryset = Comment.objects.filter(parent=None)  # Fetch top-level comments only
+    serializer_class = CommentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        lesson_id = self.kwargs['lesson_id']
+        return Comment.objects.filter(lesson_id=lesson_id)
+
+    def perform_create(self, serializer):
+        lesson_id = self.kwargs.get('lesson_id')
+        parent_id = self.request.data.get('parent')
+
+        if parent_id:
+            try:
+                parent = Comment.objects.get(id=parent_id)
+                if parent.lesson_id != lesson_id:
+                    raise ValidationError("Parent comment does not belong to this lesson.")
+            except Comment.DoesNotExist:
+                raise ValidationError("Parent comment does not exist.")
+
+            serializer.save(user=self.request.user, lesson_id=lesson_id, parent=parent)
+        else:
+            serializer.save(user=self.request.user, lesson_id=lesson_id)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from .models import Review, Course
+from store.storeSerializer import ReviewSerializer
+from rest_framework import status
+from rest_framework.generics import ListAPIView
+
+class SubmitReviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, course_id):
+        user = request.user
+        course = Course.objects.get(id=course_id)
+
+        # Check if user has already reviewed this course
+        if Review.objects.filter(user=user, course=course).exists():
+            return Response({"error": "You have already reviewed this course."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create a new review
+        data = request.data
+        review = Review.objects.create(
+            user=user,
+            course=course,
+            review_text=data.get('review_text'),
+            rating=data.get('rating')
+        )
+        return Response({"message": "Review submitted successfully!"}, status=status.HTTP_201_CREATED)
+
+class CourseReviewsView(ListAPIView):
+    serializer_class = ReviewSerializer
+
+    def get_queryset(self):
+        course_id = self.kwargs['course_id']
+        try:
+            # Ensure the course exists
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return Response({"error": "Course not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Review.objects.filter(course__id=course_id)
+    
+class TutorCourseReviewsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'tutor':
+            return Response({'detail': 'You are not authorized to view tutor reviews.'}, status=403)
+
+        tutor = request.user  # Get the logged-in tutor (User)
+        courses = Course.objects.filter(created_by=tutor)  # Filter courses by the tutor
+        reviews = Review.objects.filter(course__in=courses)  # Get reviews for these courses
+        serializer = ReviewSerializer(reviews, many=True)
+        return Response({'count': len(reviews), 'results': serializer.data})

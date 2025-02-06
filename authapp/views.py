@@ -98,11 +98,16 @@ class VerifyOTPView(APIView):
             return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
 ##############################################Login################################################
-
+from rest_framework.exceptions import AuthenticationFailed
 class LoginView(APIView):
     def post(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
+        
+        try:
+            user=User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise AuthenticationFailed('Incorrect email')
 
         # Authenticate user with email and password
         user = authenticate(request, username=email, password=password)
@@ -118,7 +123,7 @@ class LoginView(APIView):
                 'access': str(refresh.access_token),
                 'user': UserSerializer(user).data
             })
-
+        raise AuthenticationFailed("Incorrect password")
         return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
     
 ###########Logout   
@@ -347,3 +352,13 @@ class TutorProfileView(APIView):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+from store.models import Course 
+class AdminDashboard(APIView):
+    def get(self,request):
+        total_students=User.objects.filter(role='user').count()
+        total_courses=Course.objects.count()
+        return Response({
+            "total_students": total_students,
+            "total_courses": total_courses
+        })

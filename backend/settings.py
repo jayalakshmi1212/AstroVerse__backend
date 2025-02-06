@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'channels',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -43,6 +44,7 @@ INSTALLED_APPS = [
     'authapp',
     'corsheaders',
     'store',
+    'chat',
     
 ]
 
@@ -180,3 +182,18 @@ CLOUDINARY = {
     'api_secret': 'TLqyg1haRggPXpsMOO8A2v-j570',
 }
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+
+
+ASGI_APPLICATION = 'backend.asgi.application'
+
+
+# Redis backend for channel layer
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],  # Replace with your Redis host/port
+        },
+    },
+}
