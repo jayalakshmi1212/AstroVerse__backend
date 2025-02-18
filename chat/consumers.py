@@ -2,11 +2,15 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
-from .models import Message
-
+from .models import Message,Notification
+import asyncio
 User = get_user_model()
 
 class ChatConsumer(AsyncWebsocketConsumer):
+    active_peers = {}
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.peer_lock = asyncio.Lock() 
     async def connect(self):
         self.sender_id = self.scope['url_route']['kwargs']['sender_id']
         self.recipient_id = self.scope['url_route']['kwargs']['recipient_id']
@@ -28,15 +32,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def disconnect(self, close_code):
+        user_id = self.scope["url_route"]["kwargs"]["sender_id"]
+        if user_id in self.active_peers:
+            del self.active_peers[user_id]
         await self.channel_layer.group_discard(
             self.room_group_name,
             self.channel_name
         )
+        
         print("WebSocket disconnected")
 
     async def receive(self, text_data):
         data = json.loads(text_data)
-        
+        print(data['type'],"dgjihdiufjndfjgn")
         if data['type'] == 'new_message':
             message = data['message']
             file_url = data.get('file_url', None)
@@ -54,7 +62,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
                  'file_url': message_data['file_url'],
                 'timestamp': message_data['timestamp']
             }
-        )
+            
+        )   
+            notification_data = await self.create_notification(sender, recipient, message_data)
+            await self.channel_layer.group_send(
+                    f"user_{self.recipient_id}",  
+                    {
+                        'type': 'new_notification',
+                        'sender': notification_data['sender'],
+                        'message': notification_data['message'],
+                        'timestamp': notification_data['timestamp'],
+                        'is_read': notification_data['is_read']
+                    }
+                )
+            
             
         elif data['type'] == 'typing':
             # Handle typing status
@@ -68,9 +89,42 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'username': username.username
                 }
             )
-            
+        elif data["type"] == "registerPeer":
+            async with self.peer_lock:
+                self.active_peers[data["userId"]] = data["peerId"]
+            await self.send(text_data=json.dumps({"status": "Peer ID registered"}))
 
+        elif data["type"] == "initiateCall":
+            recipient_peer_id = self.active_peers.get(data["to"])
+            if recipient_peer_id:
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        "type": "incomingCall",
+                        "from": data["from"],
+                        "peerId": data["peerId"]
+                    }
+                )
+            else:
+                await self.send(text_data=json.dumps({"error": "User is not available for a call"}))
+
+        elif data["type"] == "answerCall":
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "callAccepted",
+                    "to": data["to"]
+                }
+            )
+
+        elif data["type"] == "endCall":
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {"type": "endCall"}
+            )
+    
     async def chat_message(self, event):
+
         message = event['message']
         sender = event['sender']
         file_url=event.get('file_url',None)
@@ -94,6 +148,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'is_typing': is_typing,
             'username': username
         }))
+        
+   
+    async def incomingCall(self, event):
+        await self.send(text_data=json.dumps({"type": "incomingCall", "from": event["from"], "peerId": event["peerId"]}))
+
+    async def callAccepted(self, event):
+        await self.send(text_data=json.dumps({"type": "callAccepted", "to": event["to"]}))
+
+    async def endCall(self, event):
+        await self.send(text_data=json.dumps({"type": "endCall"}))
+        
+    async def new_notification(self, event):
+        """Handles the notification event and sends it to the recipient."""
+        await self.send(text_data=json.dumps({
+            'type': 'new_notification',
+            'sender': event['sender'],
+            'message': event['message'],
+            'timestamp': event['timestamp'],
+            'is_read': event['is_read']
+        }))
 
     @database_sync_to_async
     def get_user(self, user_id):
@@ -103,6 +177,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def create_message(self, sender, recipient, content,file_url):
         message = Message.objects.create(sender=sender, recipient=recipient, content=content,file_url=file_url)
         return {'message': message.content, 'sender': sender.username, 'file_url': file_url,'timestamp': message.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+    @database_sync_to_async
+    def create_notification(self, sender, recipient, message_data):
+        """Creates a notification for the recipient when a new message is received."""
+        message_obj = Message.objects.get(content=message_data['message'])
+        notification = Notification.objects.create(
+            recipient=recipient,
+            sender=sender,
+            message=message_obj,
+            is_read=False
+        )
+        return {
+            'sender': sender.username,
+            'message': message_data['message'],
+            'timestamp': notification.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            'is_read': notification.is_read
+        }
 
     @database_sync_to_async
     def get_previous_messages(self):
