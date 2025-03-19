@@ -97,7 +97,7 @@ Astroverse is a modern e-learning platform designed for astronomy enthusiasts. I
 ---
 
 ## Contributors
-- [Your Name](https://github.com/your-username)
+- [Your Name](https://github.com/jayalakshmi1212)
 
 ---
 
